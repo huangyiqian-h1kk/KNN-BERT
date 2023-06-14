@@ -766,7 +766,9 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 self.update_encoder_k()
                 update_sample = self.reshape_dict(positive_sample)
                 bert_output_p = self.encoder_k(**update_sample)
-                update_keys = bert_output_p[1]
+                
+                update_keys = bert_output_p[1] #h1k_0614:_这里是什么形状？为什么要输出下标1啊
+                
                 update_keys = self.contrastive_liner_k(update_keys)
                 update_keys = l2norm(update_keys)
                 tmp_labels = labels.unsqueeze(-1)
