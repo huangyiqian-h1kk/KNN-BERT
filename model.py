@@ -639,16 +639,11 @@ class ContrastiveMoCoKnnBert(nn.Module):
         cos_sim = torch.einsum('nc,nkc->nk', [liner_q, tmp_feature_queue])
 
         # 3、根据label取正样本和负样本的mask_index
-        #print('label_q',label_q)
         tmp_label = label_q.unsqueeze(1)
-        #print('tmp_label',tmp_label)
         tmp_label = tmp_label.repeat([1, self.K])
 
         pos_mask_index = torch.eq(tmp_label_queue, tmp_label)
         neg_mask_index = ~ pos_mask_index
-        #print('label_q.shape',label_q.shape)
-        #print('pos_mask_index.shape',pos_mask_index.shape)
-        #print('cos_sim.shape',cos_sim.shape)
         # 4、根据mask_index取正样本和负样本的值
         feature_value = cos_sim.masked_select(pos_mask_index)
         pos_sample = torch.full_like(cos_sim, -np.inf).cuda()
@@ -657,25 +652,15 @@ class ContrastiveMoCoKnnBert(nn.Module):
         feature_value = cos_sim.masked_select(neg_mask_index)
         neg_sample = torch.full_like(cos_sim, -np.inf).cuda()
         neg_sample = neg_sample.masked_scatter(neg_mask_index, feature_value)
-        #print('/n')
-        #print('these are selected pos and neg')
-        #print(pos_sample.shape, neg_sample.shape)  
-        #print('$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
-
 
         # 5、取所有的负样本和前top_k 个正样本， -M个正样本（离中心点最远的样本）
         pos_mask_index = pos_mask_index.int()
         pos_number = pos_mask_index.sum(dim=-1)
-        #print('pos_number.shape',pos_number.shape)
-        #print('pos_number', pos_number)
         pos_min = pos_number.min()
-        #print('pos_min',pos_min)
         if pos_min == 0:
             return None
         pos_sample, _ = pos_sample.topk(pos_min, dim=-1)
-        #print('pos_sample, pos_sample.shape',pos_sample.shape)
         pos_sample_top_k = pos_sample[:, 0:self.top_k]
-        #print('pos_sample_top_k.shape',pos_sample_top_k.shape)
         pos_sample_last = pos_sample[:, -self.end_k:]
         #print('pos_sample_last.shape',pos_sample_last.shape)
         # pos_sample_last = pos_sample_last.view([-1, 1])
