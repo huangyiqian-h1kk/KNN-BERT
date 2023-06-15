@@ -626,9 +626,9 @@ class ContrastiveMoCoKnnBert(nn.Module):
         self.queue_ptr[0] = ptr
 
     def select_pos_neg_sample(self, liner_q: torch.Tensor, label_q: torch.Tensor):
-        label_queue = self.label_queue.clone().detach()        # K
+        label_queue = self.label_queue.clone().detach()#clone()提供了非数据内存共享的梯度追溯功能，而detach又“舍弃”了梯度回溯功能，因此clone.detach()只做简单的数据复制，既不数据共享，也不梯度共享，从此两个张量无关联。        # K
         feature_queue = self.feature_queue.clone().detach()    # K * hidden_size
-
+        
         # 1、将label_queue和feature_queue扩展到batch_size * K
         batch_size = label_q.shape[0]
         tmp_label_queue = label_queue.repeat([batch_size, 1])
@@ -639,12 +639,16 @@ class ContrastiveMoCoKnnBert(nn.Module):
         cos_sim = torch.einsum('nc,nkc->nk', [liner_q, tmp_feature_queue])
 
         # 3、根据label取正样本和负样本的mask_index
+        #print('label_q',label_q)
         tmp_label = label_q.unsqueeze(1)
+        #print('tmp_label',tmp_label)
         tmp_label = tmp_label.repeat([1, self.K])
 
         pos_mask_index = torch.eq(tmp_label_queue, tmp_label)
         neg_mask_index = ~ pos_mask_index
-
+        #print('label_q.shape',label_q.shape)
+        #print('pos_mask_index.shape',pos_mask_index.shape)
+        #print('cos_sim.shape',cos_sim.shape)
         # 4、根据mask_index取正样本和负样本的值
         feature_value = cos_sim.masked_select(pos_mask_index)
         pos_sample = torch.full_like(cos_sim, -np.inf).cuda()
@@ -653,20 +657,33 @@ class ContrastiveMoCoKnnBert(nn.Module):
         feature_value = cos_sim.masked_select(neg_mask_index)
         neg_sample = torch.full_like(cos_sim, -np.inf).cuda()
         neg_sample = neg_sample.masked_scatter(neg_mask_index, feature_value)
+        #print('/n')
+        #print('these are selected pos and neg')
+        #print(pos_sample.shape, neg_sample.shape)  
+        #print('$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
+
 
         # 5、取所有的负样本和前top_k 个正样本， -M个正样本（离中心点最远的样本）
         pos_mask_index = pos_mask_index.int()
         pos_number = pos_mask_index.sum(dim=-1)
+        #print('pos_number.shape',pos_number.shape)
+        #print('pos_number', pos_number)
         pos_min = pos_number.min()
+        #print('pos_min',pos_min)
         if pos_min == 0:
             return None
         pos_sample, _ = pos_sample.topk(pos_min, dim=-1)
+        #print('pos_sample, pos_sample.shape',pos_sample.shape)
         pos_sample_top_k = pos_sample[:, 0:self.top_k]
+        #print('pos_sample_top_k.shape',pos_sample_top_k.shape)
         pos_sample_last = pos_sample[:, -self.end_k:]
+        #print('pos_sample_last.shape',pos_sample_last.shape)
         # pos_sample_last = pos_sample_last.view([-1, 1])
 
         pos_sample = torch.cat([pos_sample_top_k, pos_sample_last], dim=-1)
+        #print('#pos_sample.shape',pos_sample.shape)
         pos_sample = pos_sample.view([-1, 1])
+        #print(pos_sample.shape)
 
         neg_mask_index = neg_mask_index.int()
         neg_number = neg_mask_index.sum(dim=-1)
@@ -674,8 +691,19 @@ class ContrastiveMoCoKnnBert(nn.Module):
         if neg_min == 0:
             return None
         neg_sample, _ = neg_sample.topk(neg_min, dim=-1)
+        #print('$neg_sample.shape',neg_sample.shape)
         neg_sample = neg_sample.repeat([1, self.top_k + self.end_k])
+        #print('!neg_sample.shape',neg_sample.shape)
         neg_sample = neg_sample.view([-1, neg_min])
+        #print('=neg_sample.shape',neg_sample.shape)
+        
+        
+        #print('/n')
+        #print('this is sample shape message')
+        #print(pos_sample.shape, neg_sample.shape)   
+        #print('#####################################################')
+        #print()
+        #print()
         logits_con = torch.cat([pos_sample, neg_sample], dim=-1)
         logits_con /= self.T
         return logits_con
@@ -761,27 +789,37 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 ):
         labels = query["labels"]
         labels = labels.view(-1)
+        print()
+        print()
+        print("this is query in forward, model.py")
+        print('type of query',type(query))
+        print(query)
+        print()
+        print()
+        
+        
         if not self.memory_bank:
             with torch.no_grad():
                 self.update_encoder_k()
                 update_sample = self.reshape_dict(positive_sample)
                 bert_output_p = self.encoder_k(**update_sample)
-                
-                update_keys = bert_output_p[1] #h1k_0614:_这里是什么形状？为什么要输出下标1啊
-                
+                update_keys = bert_output_p[1]
                 update_keys = self.contrastive_liner_k(update_keys)
                 update_keys = l2norm(update_keys)
                 tmp_labels = labels.unsqueeze(-1)
                 tmp_labels = tmp_labels.repeat([1, self.update_num])
                 tmp_labels = tmp_labels.view(-1)
                 self._dequeue_and_enqueue(update_keys, tmp_labels)
-
+                
+        
+        
         query.pop("labels")
         bert_output_q = self.encoder_q(**query)
         q = bert_output_q[1]
+        #context= self.encoder_q()[]
         liner_q = self.contrastive_liner_q(q)
         liner_q = l2norm(liner_q)
-        logits_cls = self.classifier_liner(q)
+        #logits_cls = self.classifier_liner(q,context)
 
         if self.num_labels == 1:
             loss_fct = MSELoss()
