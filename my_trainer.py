@@ -300,12 +300,14 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.optimizer, self.lr_scheduler = optimizers
+
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument."
                 "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
             )
         callbacks = DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
+        print("$$$$$$lr_scheduler,optimizer$$$$$",self.lr_scheduler,self.optimizer)
         self.callback_handler = CallbackHandler(callbacks, self.model, self.optimizer, self.lr_scheduler)
         self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
 
@@ -372,7 +374,8 @@ class Trainer:
         # state at each call to self.log.
         self._total_flos = None
         self.hp_search_backend = None
-        self.use_tune_checkpoints = False
+        #self.use_tune_checkpoints = False
+        self.use_tune_checkpoints = True
         default_label_names = (
             ["start_positions", "end_positions"]
             if type(self.model) in MODEL_FOR_QUESTION_ANSWERING_MAPPING.values()
@@ -1617,6 +1620,11 @@ class Trainer:
 
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
+        
+        #芊：edited June 2nd below
+        pt_save_directory = output_dir+"/pt_save_pretrained"
+        self.tokenizer.save_pretrained(pt_save_directory)
+        self.model.encoder_q.save_pretrained(pt_save_directory)
 
     def store_flos(self):
         # Storing the number of floating-point operations that went into the model
@@ -1921,6 +1929,13 @@ class Trainer:
         # inputs.pop("sent_id")
         # inputs.pop("original_text")
         inputs = self._prepare_inputs(inputs)
+        print()
+        print()
+        print('this is inputs in my_trainer')
+        print(inputs)
+        print()
+        print()
+        
         if ignore_keys is None:
             if hasattr(self.model, "config"):
                 ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])
