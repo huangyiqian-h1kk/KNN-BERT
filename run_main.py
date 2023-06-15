@@ -116,6 +116,7 @@ class DataTrainingArguments:
         if self.task_name is not None:
             self.task_name = self.task_name.lower()
             if self.task_name not in task_to_keys.keys():
+                print(self.task_name)
                 raise ValueError("Unknown task, you should pick one in " + ",".join(task_to_keys.keys()))
         elif self.train_file is None or self.validation_file is None:
             raise ValueError("Need either a GLUE task or a training/validation file.")
@@ -154,7 +155,7 @@ class ModelArguments:
 
 @dataclass
 class FitLogArguments:
-    task: str
+ #   task: str
     negative_num: int = field(default=96)
     positive_num: int = field(default=16)
     queue_size: int = field(default=32000)
@@ -221,8 +222,11 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args, fitlog_args = parser.parse_args_into_dataclasses()
+        print('training_args',training_args)
 
     training_args.sample_file = data_args.train_file
+    print('data_args',data_args)
+    print('data_args.train_file',data_args.train_file)
     training_args.max_length = data_args.max_seq_length
     fitlog.set_log_dir(training_args.fitlog_dir)
     fitlog_args_dict = {"seed": training_args.seed,
@@ -289,11 +293,11 @@ def main():
         if training_args.do_predict:
             datasets = load_dataset(
                 "csv", data_files={"train": data_args.train_file, "validation": data_args.validation_file,
-                                   "test": data_args.test_file}, sep="\t"
+                                   "test": data_args.test_file}, sep=","
             )
         else:
             datasets = load_dataset(
-                "csv", data_files={"train": data_args.train_file, "validation": data_args.validation_file}, sep="\t"
+                "csv", data_files={"train": data_args.train_file, "validation": data_args.validation_file}, sep=","
             )
     else:
         # Loading a dataset from local json files
@@ -327,16 +331,18 @@ def main():
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-
+    print('training_args.load_trained_model',training_args.load_trained_model)
     if training_args.load_trained_model:
         config = AutoConfig.from_pretrained(
-            model_args.model_name_or_path,
+            #芊edited 23.06.03
+            #model_args.model_name_or_path,
+            model_args.model_name_or_path+"/pt_save_pretrained",
             num_labels=num_labels,
             finetuning_task=data_args.task_name,
             cache_dir=model_args.cache_dir,
         )
 
-        config.model_name = model_args.model_name_or_path
+        config.model_name = "roberta-large"
         config.negative_num = training_args.negative_num
         config.positive_num = training_args.positive_num
         config.queue_size = training_args.queue_size
@@ -346,13 +352,11 @@ def main():
         config.multi_head_num = training_args.multi_head_num
         config.memory_bank = training_args.memory_bank
         config.random_positive = training_args.random_positive
-
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path
-        )
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path+"/pt_save_pretrained")
+        
         if training_args.load_model_pattern == "original_model":
             model = AutoModelForSequenceClassification.from_pretrained(
-                training_args.model_path,
+                training_args.model_name_or_path,
                 config=config
             )
         elif training_args.load_model_pattern == "moco":
@@ -362,15 +366,17 @@ def main():
         elif training_args.load_model_pattern == "knn_bert":
             config.knn_num = training_args.top_k
             model = ContrastiveMoCoKnnBert(config=config)
-            logger.info("loading model form " + training_args.model_path + "pytorch_model.bin")
-            state_dict = torch.load(training_args.model_path + "pytorch_model.bin")
+            logger.info("loading model form " + model_args.model_name_or_path + "pytorch_model.bin")
+            print("training_args",training_args)
+            print("model_args",model_args)
+            state_dict = torch.load(model_args.model_name_or_path + "pytorch_model.bin")
             model.load_state_dict(state_dict)
         elif training_args.load_model_pattern == "knn_roberta":
             config.knn_num = training_args.top_k
             config.end_k = training_args.end_k
             model = ContrastiveRobertaMoCoKnnBert(config=config)
-            logger.info("loading model form " + training_args.model_path + "pytorch_model.bin")
-            state_dict = torch.load(training_args.model_path + "pytorch_model.bin")
+            logger.info("loading model form " + model_args.model_name_or_path + "pytorch_model.bin")
+            state_dict = torch.load(model_args.model_name_or_path + "pytorch_model.bin")
             model.load_state_dict(state_dict)
         else:
             logger.warning("your model should in list [original_model moco roberta_moco knn_bert knn_roberta]")
@@ -381,7 +387,9 @@ def main():
             finetuning_task=data_args.task_name,
             cache_dir=model_args.cache_dir,
         )
-
+        print('model_args.config_name',model_args.config_name)
+        print('model_args.config_name')
+        print(config)
         config.model_name = model_args.model_name_or_path
         config.negative_num = training_args.negative_num
         config.positive_num = training_args.positive_num
@@ -392,7 +400,7 @@ def main():
         config.multi_head_num = training_args.multi_head_num
         config.memory_bank = training_args.memory_bank
         config.random_positive = training_args.random_positive
-
+        
         tokenizer = AutoTokenizer.from_pretrained(
             model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
             cache_dir=model_args.cache_dir,
