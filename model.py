@@ -765,14 +765,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 ):
         labels = query["labels"]
         labels = labels.view(-1)
-        print()
-        print()
-        print("this is query in forward, model.py")
-        print('type of query',type(query))
-        print(query)
-        print()
-        print()
-        
+
         
         if not self.memory_bank:
             with torch.no_grad():
