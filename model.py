@@ -680,15 +680,6 @@ class ContrastiveMoCoKnnBert(nn.Module):
         neg_sample = neg_sample.repeat([1, self.top_k + self.end_k])
         #print('!neg_sample.shape',neg_sample.shape)
         neg_sample = neg_sample.view([-1, neg_min])
-        #print('=neg_sample.shape',neg_sample.shape)
-        
-        
-        #print('/n')
-        #print('this is sample shape message')
-        #print(pos_sample.shape, neg_sample.shape)   
-        #print('#####################################################')
-        #print()
-        #print()
         logits_con = torch.cat([pos_sample, neg_sample], dim=-1)
         logits_con /= self.T
         return logits_con
