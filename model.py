@@ -795,6 +795,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
         #context= self.encoder_q()[]
         liner_q = self.contrastive_liner_q(q)
         liner_q = l2norm(liner_q)
+        logits_cls = self.classifier_liner(q)
         #logits_cls = self.classifier_liner(q,context)
 
         if self.num_labels == 1:
