@@ -163,6 +163,7 @@ class ContrastiveMoCo(nn.Module):
             self.init_weights()
 
         # create the label_queue and feature_queue
+        #h1k：从这里开始修改enqueue dequeue?
         self.K = config.queue_size
 
         self.register_buffer("label_queue", torch.randint(0, self.num_labels, [self.K]))
@@ -601,6 +602,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
         # TODO 我们训练过程batch_size是一个变动的，每个epoch的最后一个batch数目后比较少，这里需要进一步修改
         # keys = concat_all_gather(keys)
         # label = concat_all_gather(label)
+        #所以key和label的大小都是一个batch？然后看需不需要入队？前面是没有填充完batch的 后面是填充完一整个batch后常态化enqueue dequeue策略更新的
         batch_size = keys.shape[0]
 
         ptr = int(self.queue_ptr)
