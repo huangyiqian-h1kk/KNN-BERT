@@ -411,6 +411,7 @@ class Trainer:
         return cos_sim, word2id, id2word
 
     def create_negative_dataset(self):
+        ＃h1k这不是全数据集的label：example键值对吗，为什么叫negative啊我不懂我真的不懂
         negative_dataset = {}
         data = self.train_dataset
         for line in data:
@@ -631,6 +632,7 @@ class Trainer:
 
     def generate_positive_sample(self, label: torch.Tensor):
         #h1k:哪里positive了啊 nm 这里的十六个sample拿来干嘛的啊
+        #给这一波的每一个example生成他们的正例列表？那查看一下negative_data的组织形式好了
         positive_num = self.args.positive_num
 
         # positive_num = 16
