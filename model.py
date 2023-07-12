@@ -765,6 +765,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 positive_sample=None,
                 negative_sample=None,
                 ):
+        #h1k:调用在my_trainer的training_step方法，只生产了positive_sample,传入的negative_sample本来就是none
         labels = query["labels"]
         labels = labels.view(-1)
 
