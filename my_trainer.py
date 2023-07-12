@@ -627,6 +627,7 @@ class Trainer:
         return PredictionOutput(predictions=preds_knn, label_ids=label_ids, metrics=metrics)
 
     def generate_positive_sample(self, label: torch.Tensor):
+        #h1k:哪里positive了啊 nm 这里的十六个sample拿来干嘛的啊
         positive_num = self.args.positive_num
 
         # positive_num = 16
