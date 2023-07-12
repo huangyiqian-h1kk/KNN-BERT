@@ -688,6 +688,7 @@ class Trainer:
         negative_sample = None
         if not self.args.memory_bank and self.args.load_model_pattern in ["knn_bert", "knn_roberta"]:
             positive_sample = self.generate_positive_sample(inputs["labels"])
+            #h1k:对一个minibatch的所有example，一次性取16个同类元素作为positive pair塞进queue里面作为更新的minibatch
             positive_sample = self._prepare_inputs(positive_sample)
 
         if self.args.load_model_pattern in ["moco", "roberta_moco"]:
