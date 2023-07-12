@@ -632,7 +632,8 @@ class Trainer:
 
     def generate_positive_sample(self, label: torch.Tensor):
         #h1k:哪里positive了啊 nm 这里的十六个sample拿来干嘛的啊
-        #给这一波的每一个example生成他们的正例列表？那查看一下negative_data的组织形式好了
+        #给这一波的每一个example生成他们的正例列表 作为出队入队的mini batch. (跟query的batch大小不一致的 query的大小才是传入的args里面规定的大小 详见model.py forward)
+        
         positive_num = self.args.positive_num
 
         # positive_num = 16
