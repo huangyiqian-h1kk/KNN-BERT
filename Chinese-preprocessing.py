@@ -145,38 +145,6 @@ def process(path, output_name):
     return ls
     
 
-
-# In[ ]:
-
-
-row_index = t[t.TV_ID ==2].index.tolist()[-1]
-
-
-# In[ ]:
-
-
-get_context(1, get_flag(1,t), t)
-
-
-# In[ ]:
-
-
-t['Utterance'][15170]
-
-
-# In[ ]:
-
-
-conlist=['']*11
-
-
-# In[ ]:
-
-
-a=[1,2,3,4,5,6,7]
-a[0:5]
-
-
 # In[69]:
 
 
