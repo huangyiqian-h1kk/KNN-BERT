@@ -7,6 +7,7 @@ from transformers import BertModel, RobertaModel, BertPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel
 from torch.nn import CrossEntropyLoss, MSELoss
+import torch.nn.functional as F
 
 
 def l2norm(x: torch.Tensor):
@@ -14,6 +15,18 @@ def l2norm(x: torch.Tensor):
     x = torch.div(x, norm)
     return x
 
+class CustomCrossEntropyLoss(nn.CrossEntropyLoss):
+    def forward(self, input, target, mask=None):
+        # Apply your masked softmax operation here using the input and mask
+        if mask is not None:
+            input_masked = input * mask + (1 - 1 / mask)
+            input_softmax = your_masked_softmax_function(input_masked)
+        else:
+            input_softmax = F.softmax(input, dim=1)
+        
+        # Calculate the loss using the masked softmax probabilities
+        return F.cross_entropy(input_softmax, target, weight=self.weight,
+                               ignore_index=self.ignore_index, reduction=self.reduction)
 
 class SCLModel(BertPreTrainedModel):
     def __init__(self, config):
