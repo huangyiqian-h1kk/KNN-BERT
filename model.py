@@ -15,11 +15,11 @@ def l2norm(x: torch.Tensor):
     x = torch.div(x, norm)
     return x
 
-class CustomCrossEntropyLoss(nn.CrossEntropyLoss):
-    def forward(self, input, target, mask=None):
+class MaskedCrossEntropyLoss(nn.CrossEntropyLoss):
+    def forward(self, input, target, script_mask=None):
         # Apply your masked softmax operation here using the input and mask
         if mask is not None:
-            input_masked = input * mask + (1 - 1 / mask)
+            input_masked = input * script_mask + (1 - 1 / script_mask)
             input_softmax = your_masked_softmax_function(input_masked)
         else:
             input_softmax = F.softmax(input, dim=1)
@@ -810,8 +810,10 @@ class ContrastiveMoCoKnnBert(nn.Module):
             loss_fct = MSELoss()
             loss_cls = loss_fct(logits_cls.view(-1), labels)
         else:
-            loss_fct = CrossEntropyLoss()
-            loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels)
+            #loss_fct = CrossEntropyLoss()
+            loss_fct = MaskedCrossEntropyLoss()
+            #loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels)
+            loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels, s_mask)
 
         if self.random_positive:
             logits_con = self.select_pos_neg_random(liner_q, labels)
@@ -820,8 +822,10 @@ class ContrastiveMoCoKnnBert(nn.Module):
 
         if logits_con is not None:
             labels_con = torch.zeros(logits_con.shape[0], dtype=torch.long).cuda()
-            loss_fct = CrossEntropyLoss()
-            loss_con = loss_fct(logits_con, labels_con)
+            #loss_fct = CrossEntropyLoss()
+            loss_fct = MaskedCrossEntropyLoss()
+            #loss_con = loss_fct(logits_con, labels_con)
+            loss_con = loss_fct(logits_con, labels_con, s_mask_con)
 
             loss = loss_con * self.config.contrastive_rate_in_training + \
                    loss_cls * (1 - self.config.contrastive_rate_in_training)
