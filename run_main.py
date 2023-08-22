@@ -209,6 +209,19 @@ def data_collator(features):
 
     return batch
 
+#h1k
+def CreateMaskDict(LabelList, DATA):
+    mask_dict = dict()
+    tv_list = DATA["train"].unique("TV_id")
+    all_roles= np.array(LabelList.keys())
+    for ids in tv_list:
+        ind = DATA["train"]["TV_id"].index(ids)
+        roles = DATA["train"]['candidates'][ind]
+        mask_row = np.isin(all_roles, roles)
+        mask_dict[ids] = mask_row
+        
+    return mask_dict
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -365,6 +378,7 @@ def main():
             model = ContrastiveRoBertaMoCo(config=config)
         elif training_args.load_model_pattern == "knn_bert":
             config.knn_num = training_args.top_k
+            config.script_mask_dict = CreateMaskDict(label_list, datasets)
             model = ContrastiveMoCoKnnBert(config=config)
             logger.info("loading model form " + model_args.model_name_or_path + "pytorch_model.bin")
             print("training_args",training_args)
