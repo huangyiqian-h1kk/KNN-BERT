@@ -1150,9 +1150,12 @@ class Trainer:
             print("******************")
             print("init queue by bert")
             for step, inputs in enumerate(train_dataloader):
+            #其实就是初始化一遍给他灌满？没别哒？因为queue很大是吧 行都行 md给老子看半天
                 inputs = self._prepare_inputs(inputs)
                 labels = inputs["labels"]
+                tv_id_batch = inputs["TV_id"]
                 inputs.pop("labels")
+                inputs.pop("TV_id")
 
                 if self.args.n_gpu > 1 and not self.args.model_parallel:
                     model.module.update_queue_by_bert(inputs, labels)
