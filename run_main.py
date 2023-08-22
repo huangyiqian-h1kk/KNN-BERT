@@ -214,8 +214,8 @@ def CreateMaskDict(LabelList, DATA):
     all_roles= np.array(LabelList)
     for ids in tv_list:
         ind = DATA["train"]["TV_id"].index(ids)
-        roles = DATA["train"]['candidates'][ind]
-        mask_row = np.isin(all_roles, roles)
+        roles = np.array(DATA["train"]['candidates'][ind])
+        mask_row = np.isin(all_roles, roles).tolist()
         mask_dict[ids] = mask_row
         
     return mask_dict
