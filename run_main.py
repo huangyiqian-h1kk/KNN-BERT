@@ -408,6 +408,7 @@ def main():
         elif training_args.load_model_pattern == "knn_bert":
             config.knn_num = training_args.top_k
             config.end_k = training_args.end_k
+            config.script_mask_dict = CreateMaskDict(label_list, datasets)
             model = ContrastiveMoCoKnnBert(config=config)
         elif training_args.load_model_pattern == "knn_roberta":
             config.knn_num = training_args.top_k
