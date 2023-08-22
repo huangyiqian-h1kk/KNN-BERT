@@ -208,6 +208,18 @@ def data_collator(features):
 
     return batch
 
+def CreateMaskDict(LabelList, DATA):
+    mask_dict = dict()
+    tv_list = DATA["train"].unique("TV_id")
+    all_roles= np.array(LabelList)
+    for ids in tv_list:
+        ind = DATA["train"]["TV_id"].index(ids)
+        roles = DATA["train"]['candidates'][ind]
+        mask_row = np.isin(all_roles, roles)
+        mask_dict[ids] = mask_row
+        
+    return mask_dict
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
