@@ -16,11 +16,16 @@ def l2norm(x: torch.Tensor):
     return x
 
 class MaskedCrossEntropyLoss(nn.CrossEntropyLoss):
+    def masked_softmax(x, mask, **kwargs):
+        x_masked = x.clone()
+        x_masked[mask == 0] = -float("inf")
+        return torch.softmax(x_masked, **kwargs)
+
     def forward(self, input, target, script_mask=None):
         # Apply your masked softmax operation here using the input and mask
         if mask is not None:
             input_masked = input * script_mask + (1 - 1 / script_mask)
-            input_softmax = your_masked_softmax_function(input_masked)
+            input_softmax = masked_softmax(input_masked)
         else:
             input_softmax = F.softmax(input, dim=1)
         
@@ -600,6 +605,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
         self.K = config.queue_size
 
         self.register_buffer("label_queue", torch.randint(0, self.num_labels, [self.K]))
+        self.register_buffer("tvid_queue", torch.randint(0, self.num_labels, [self.K]))
         self.register_buffer("feature_queue", torch.randn(self.K, config.hidden_size))
         self.feature_queue = torch.nn.functional.normalize(self.feature_queue, dim=0)
 
@@ -610,12 +616,12 @@ class ContrastiveMoCoKnnBert(nn.Module):
 
         self.memory_bank = config.memory_bank
         self.random_positive = config.random_positive
-
-    def _dequeue_and_enqueue(self, keys, label):
+        self.script_mask_dict = config.script_mask_dict
+        
+    def _dequeue_and_enqueue(self, keys, label, tvid):
         # TODO 我们训练过程batch_size是一个变动的，每个epoch的最后一个batch数目后比较少，这里需要进一步修改
         # keys = concat_all_gather(keys)
         # label = concat_all_gather(label)
-        #所以key和label的大小都是一个batch？然后看需不需要入队？前面是没有填充完batch的 后面是填充完一整个batch后常态化enqueue dequeue策略更新的
         batch_size = keys.shape[0]
 
         ptr = int(self.queue_ptr)
@@ -624,41 +630,57 @@ class ContrastiveMoCoKnnBert(nn.Module):
             head_size = self.K - ptr
             head_keys = keys[: head_size]
             head_label = label[: head_size]
+            head_tvid = tvid[: head_size]
             end_size = ptr + batch_size - self.K
             end_key = keys[head_size:]
             end_label = label[head_size:]
+            end_tvid = tvid[head_size:]
             self.feature_queue[ptr:, :] = head_keys
             self.label_queue[ptr:] = head_label
+            self.tvid_queue[ptr:] = head_tvid
             self.feature_queue[:end_size, :] = end_key
             self.label_queue[:end_size] = end_label
+            self.tvid_queue[:end_size] = end_tvid
         else:
             # replace the keys at ptr (dequeue ans enqueue)
             self.feature_queue[ptr: ptr + batch_size, :] = keys
             self.label_queue[ptr: ptr + batch_size] = label
+            self.tvid_queue[ptr: ptr + batch_size] = tvid
 
         ptr = (ptr + batch_size) % self.K
 
         self.queue_ptr[0] = ptr
-
-    def select_pos_neg_sample(self, liner_q: torch.Tensor, label_q: torch.Tensor):
+        
+    def select_pos_neg_sample(self, liner_q: torch.Tensor, label_q: torch.Tensor, tv_id: torch.Tensor):
         label_queue = self.label_queue.clone().detach()#clone()提供了非数据内存共享的梯度追溯功能，而detach又“舍弃”了梯度回溯功能，因此clone.detach()只做简单的数据复制，既不数据共享，也不梯度共享，从此两个张量无关联。        # K
         feature_queue = self.feature_queue.clone().detach()    # K * hidden_size
+        tvid_queue = self.tvid_queue.clone().detach() #K
         
         # 1、将label_queue和feature_queue扩展到batch_size * K
         batch_size = label_q.shape[0]
         tmp_label_queue = label_queue.repeat([batch_size, 1])
+        tmp_tvid_queue = tvid_queue.repeat([batch_size, 1])
         tmp_feature_queue = feature_queue.unsqueeze(0)
         tmp_feature_queue = tmp_feature_queue.repeat([batch_size, 1, 1]) # batch_size * K * hidden_size
+        
 
         # 2、计算相似度
         cos_sim = torch.einsum('nc,nkc->nk', [liner_q, tmp_feature_queue])
+        
 
         # 3、根据label取正样本和负样本的mask_index
         tmp_label = label_q.unsqueeze(1)
         tmp_label = tmp_label.repeat([1, self.K])
+        tmp_tvid = tv_id.unsqueeze(1)
+        tmp_tvid = tv_id.repeat([1, self.K])
+       
 
         pos_mask_index = torch.eq(tmp_label_queue, tmp_label)
         neg_mask_index = ~ pos_mask_index
+        
+        pos_tvid_mask = torch.eq(tmp_tvid_queue, tmp_tvid)
+        neg_tvid_mask = ~ pos_tvid_mask
+        
         # 4、根据mask_index取正样本和负样本的值
         feature_value = cos_sim.masked_select(pos_mask_index)
         pos_sample = torch.full_like(cos_sim, -np.inf).cuda()
@@ -666,16 +688,22 @@ class ContrastiveMoCoKnnBert(nn.Module):
 
         feature_value = cos_sim.masked_select(neg_mask_index)
         neg_sample = torch.full_like(cos_sim, -np.inf).cuda()
-        neg_sample = neg_sample.masked_scatter(neg_mask_index, feature_value)
+        neg_sample = neg_sample.masked_scatter(neg_tvid_mask, feature_value)
+        neg_sample = neg_sample.masked_scatter(neg_mask_index, neg_sample)
 
         # 5、取所有的负样本和前top_k 个正样本， -M个正样本（离中心点最远的样本）
         pos_mask_index = pos_mask_index.int()
         pos_number = pos_mask_index.sum(dim=-1)
+        #print('pos_number.shape',pos_number.shape)
+        #print('pos_number', pos_number)
         pos_min = pos_number.min()
+        #print('pos_min',pos_min)
         if pos_min == 0:
             return None
         pos_sample, _ = pos_sample.topk(pos_min, dim=-1)
+        #print('pos_sample, pos_sample.shape',pos_sample.shape)
         pos_sample_top_k = pos_sample[:, 0:self.top_k]
+        #print('pos_sample_top_k.shape',pos_sample_top_k.shape)
         pos_sample_last = pos_sample[:, -self.end_k:]
         #print('pos_sample_last.shape',pos_sample_last.shape)
         # pos_sample_last = pos_sample_last.view([-1, 1])
@@ -695,17 +723,21 @@ class ContrastiveMoCoKnnBert(nn.Module):
         neg_sample = neg_sample.repeat([1, self.top_k + self.end_k])
         #print('!neg_sample.shape',neg_sample.shape)
         neg_sample = neg_sample.view([-1, neg_min])
+        
         logits_con = torch.cat([pos_sample, neg_sample], dim=-1)
         logits_con /= self.T
         return logits_con
 
+    
     def select_pos_neg_random(self, liner_q: torch.Tensor, label_q: torch.Tensor):
         label_queue = self.label_queue.clone().detach()        # K
         feature_queue = self.feature_queue.clone().detach()    # K * hidden_size
+        tvid_queue = self.tvid_queue.clone().detach()
 
         # 1、将label_queue和feature_queue扩展到batch_size * K
         batch_size = label_q.shape[0]
         tmp_label_queue = label_queue.repeat([batch_size, 1])
+        tmp_tvid_queue = tvid_queue.repeat([batch_size, 1])
         tmp_feature_queue = feature_queue.unsqueeze(0)
         tmp_feature_queue = tmp_feature_queue.repeat([batch_size, 1, 1]) # batch_size * K * hidden_size
 
@@ -781,6 +813,9 @@ class ContrastiveMoCoKnnBert(nn.Module):
         #h1k:调用在my_trainer的training_step方法，只生产了positive_sample,传入的negative_sample本来就是none
         labels = query["labels"]
         labels = labels.view(-1)
+        batch_tv_id = query["tv_id"]
+        batch_tv_id = batch_tv_id.view(-1)
+        batch_tv_mask = [self.script_mask_dict[tv_id] for tv_id in batch_tv_id]
 
         
         if not self.memory_bank:
@@ -794,7 +829,10 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 tmp_labels = labels.unsqueeze(-1)
                 tmp_labels = tmp_labels.repeat([1, self.update_num])
                 tmp_labels = tmp_labels.view(-1)
-                self._dequeue_and_enqueue(update_keys, tmp_labels)
+                tmp_tvids = batch_tv_id.unsqueeze(-1)
+                tmp_tvids = tmp_tvids.repeat([1, self.update_num])
+                tmp_tvids = tmp_tvids.view(-1)
+                self._dequeue_and_enqueue(update_keys, tmp_labels, tmp_tvids)
                 
         
         
@@ -804,6 +842,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
         #context= self.encoder_q()[]
         liner_q = self.contrastive_liner_q(q)
         liner_q = l2norm(liner_q)
+        logits_cls = self.classifier_liner(q)
         #logits_cls = self.classifier_liner(q,context)
 
         if self.num_labels == 1:
@@ -813,10 +852,11 @@ class ContrastiveMoCoKnnBert(nn.Module):
             #loss_fct = CrossEntropyLoss()
             loss_fct = MaskedCrossEntropyLoss()
             #loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels)
-            loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels, s_mask)
+            loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels, batch_tv_mask)
 
         if self.random_positive:
             logits_con = self.select_pos_neg_random(liner_q, labels)
+            #怎么处理距离问题啊
         else:
             logits_con = self.select_pos_neg_sample(liner_q, labels)
 
@@ -825,7 +865,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
             #loss_fct = CrossEntropyLoss()
             loss_fct = MaskedCrossEntropyLoss()
             #loss_con = loss_fct(logits_con, labels_con)
-            loss_con = loss_fct(logits_con, labels_con, s_mask_con)
+            loss_con = loss_fct(logits_con, labels_con, con_tv_mask)
 
             loss = loss_con * self.config.contrastive_rate_in_training + \
                    loss_cls * (1 - self.config.contrastive_rate_in_training)
@@ -854,7 +894,8 @@ class ContrastiveMoCoKnnBert(nn.Module):
 
     def update_queue_by_bert(self,
                              inputs=None,
-                             labels=None
+                             labels=None,
+                             tv_id_batch=None
                              ):
         with torch.no_grad():
             update_sample = self.reshape_dict(inputs)
@@ -862,7 +903,10 @@ class ContrastiveMoCoKnnBert(nn.Module):
             update_keys = roberta_output[1]
             tmp_labels = labels.unsqueeze(-1)
             tmp_labels = tmp_labels.view(-1)
-            self._dequeue_and_enqueue(update_keys, tmp_labels)
+            tmp_tvids = tv_id_batch.unsqueeze(-1)
+            tmp_tvids = tmp_ids.view(-1)
+            
+            self._dequeue_and_enqueue(update_keys, tmp_labels, tmp_tvids)
 
 
 class ContrastiveRobertaMoCoKnnBert(nn.Module):
@@ -1003,6 +1047,7 @@ class ContrastiveRobertaMoCoKnnBert(nn.Module):
                 ):
         labels = query["labels"]
         labels = labels.view(-1)
+        script = query["tv_id"]
 
         if not self.memory_bank:
             with torch.no_grad():
