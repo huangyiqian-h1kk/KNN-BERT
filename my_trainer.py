@@ -1160,12 +1160,16 @@ class Trainer:
             for step, inputs in enumerate(train_dataloader):
                 inputs = self._prepare_inputs(inputs)
                 labels = inputs["labels"]
+                print(inputs.keys())
+                tv_id_batch = inputs["TV_id"]
+                
                 inputs.pop("labels")
+                inputs.pop("TV_id")
 
                 if self.args.n_gpu > 1 and not self.args.model_parallel:
-                    model.module.update_queue_by_bert(inputs, labels)
+                    model.module.update_queue_by_bert(inputs, labels, tv_id_batch)
                 else:
-                    model.update_queue_by_bert(inputs, labels)
+                    model.update_queue_by_bert(inputs, labels, tv_id_batch)
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
                 train_dataloader.sampler.set_epoch(epoch)
