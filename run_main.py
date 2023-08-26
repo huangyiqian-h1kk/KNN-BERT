@@ -213,7 +213,7 @@ def data_collator(features):
 def CreateMaskDict(LabelList, DATA):
     mask_dict = dict()
     tv_list = DATA["train"].unique("TV_id")
-    all_roles= np.array(LabelList.keys())
+    all_roles= np.array(LabelList)
     for ids in tv_list:
         ind = DATA["train"]["TV_id"].index(ids)
         roles = DATA["train"]['candidates'][ind]
@@ -511,6 +511,8 @@ def main():
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [label_to_id[l] for l in examples["label"]]
+        result["candidates"] = examples["candidates"]
+
         # result["sent_id"] = [index for index, i in enumerate(examples["label"])]
         # result["original_text"] = examples[sentence1_key]
         return result
