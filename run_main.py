@@ -505,14 +505,11 @@ def main():
             (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
         )
         result = tokenizer(*args, padding=padding, max_length=max_length, truncation=True)
-        print("result",result)
-        print("label_to_id")
-
+        
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [label_to_id[l] for l in examples["label"]]
-        result["candidates"] = examples["candidates"]
-
+        result["candidates"] = [label_to_id[l] for l in examples["candidates"]]
         # result["sent_id"] = [index for index, i in enumerate(examples["label"])]
         # result["original_text"] = examples[sentence1_key]
         return result
