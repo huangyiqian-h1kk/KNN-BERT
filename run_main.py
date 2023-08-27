@@ -213,7 +213,7 @@ def data_collator(features):
 def CreateMaskDict(LabelList, DATA):
     mask_dict = dict()
     tv_list = DATA["train"].unique("TV_id")
-    all_roles= np.array(LabelList)
+    all_roles= np.array(range(len(LabelList)))
     for ids in tv_list:
         ind = DATA["train"]["TV_id"].index(ids)
         roles = DATA["train"]['candidates'][ind]
