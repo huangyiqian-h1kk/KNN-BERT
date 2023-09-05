@@ -509,7 +509,7 @@ def main():
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [label_to_id[l] for l in examples["label"]]
-        result["candidates"] = [label_to_id[l] for l in examples["candidates"]if l in label_to_id.values()]
+        result["candidates"] = [[label_to_id[l] for l in can if l in label_to_id.values()] for can in examples["candidates"]]
         # result["sent_id"] = [index for index, i in enumerate(examples["label"])]
         # result["original_text"] = examples[sentence1_key]
         return result
