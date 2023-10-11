@@ -411,7 +411,6 @@ class Trainer:
         return cos_sim, word2id, id2word
 
     def create_negative_dataset(self):
-        ＃h1k这不是全数据集的label：example键值对吗，为什么叫negative啊我不懂我真的不懂
         negative_dataset = {}
         data = self.train_dataset
         for line in data:
@@ -631,16 +630,16 @@ class Trainer:
         return PredictionOutput(predictions=preds_knn, label_ids=label_ids, metrics=metrics)
 
     def generate_positive_sample(self, label: torch.Tensor):
-        #h1k:哪里positive了啊 nm 这里的十六个sample拿来干嘛的啊
-        #给这一波的每一个example生成他们的正例列表 作为出队入队的mini batch. (跟query的batch大小不一致的 query的大小才是传入的args里面规定的大小 详见model.py forward)
-        
         positive_num = self.args.positive_num
 
         # positive_num = 16
         positive_sample = []
         for index in range(label.shape[0]):
             input_label = int(label[index])
-            positive_sample.extend(random.sample(self.negative_data[input_label], positive_num))
+            try:
+                positive_sample.extend(random.sample(self.negative_data[input_label], positive_num))
+            except:
+                print('except','input_label',input_label)
 
         return self.reshape_dict(positive_num, self.list_item_to_tensor(positive_sample))
 
@@ -688,7 +687,7 @@ class Trainer:
         negative_sample = None
         if not self.args.memory_bank and self.args.load_model_pattern in ["knn_bert", "knn_roberta"]:
             positive_sample = self.generate_positive_sample(inputs["labels"])
-            #h1k:对一个minibatch的所有example，一次性取16个同类元素作为positive pair塞进queue里面作为更新的minibatch
+            print('inputs["labels"]',inputs["labels"])
             positive_sample = self._prepare_inputs(positive_sample)
 
         if self.args.load_model_pattern in ["moco", "roberta_moco"]:
@@ -806,6 +805,8 @@ class Trainer:
         if self.train_dataset is None:
             raise ValueError("Trainer: training requires a train_dataset.")
         train_sampler = self._get_train_sampler()
+        
+        print('line809 in my_trainer', self.train_dataset)
 
         return DataLoader(
             self.train_dataset,
@@ -1020,6 +1021,21 @@ class Trainer:
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        for _, inputs in enumerate(train_dataloader):
+            print('line1028 in my trainer',inputs)
+            break
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
+        print('line1022 in my trainer')
 
         # Setting up training control variables:
         # number of training epochs: num_train_epochs
@@ -1160,11 +1176,12 @@ class Trainer:
             for step, inputs in enumerate(train_dataloader):
                 inputs = self._prepare_inputs(inputs)
                 labels = inputs["labels"]
-                print(inputs.keys())
+                print('line1161 in my trainer',inputs.keys())
                 tv_id_batch = inputs["TV_id"]
                 
                 inputs.pop("labels")
                 inputs.pop("TV_id")
+                print("my_trainer.py print inputs", inputs['candidates'].shape)
 
                 if self.args.n_gpu > 1 and not self.args.model_parallel:
                     model.module.update_queue_by_bert(inputs, labels, tv_id_batch)

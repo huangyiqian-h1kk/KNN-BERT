@@ -181,6 +181,7 @@ def data_collator(features):
     """
 
     first = features[0]
+    
     batch = {}
     # if "original_text" in first:
     #     batch["original_text"] = [f["original_text"] for f in features]
@@ -206,7 +207,6 @@ def data_collator(features):
                 batch[k] = torch.stack([f[k] for f in features])
             else:
                 batch[k] = torch.tensor([f[k] for f in features])
-
     return batch
 
 #h1k
@@ -216,12 +216,11 @@ def CreateMaskDict(LabelList, DATA):
     all_roles= np.array(range(len(LabelList)))
     for ids in tv_list:
         ind = DATA["train"]["TV_id"].index(ids)
-        roles = DATA["train"]['candidates'][ind]
-        mask_row = np.isin(all_roles, roles)
+        roles = np.array(DATA["train"]['candidates'][ind])
+        mask_row = np.isin(all_roles, roles).tolist()
         mask_dict[ids] = mask_row
         
     return mask_dict
-
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -330,6 +329,7 @@ def main():
             num_labels = 1
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
+        print(datasets["train"].features.keys())
         is_regression = datasets["train"].features["label"].dtype in ["float32", "float64"]
         if is_regression:
             num_labels = 1
@@ -338,6 +338,7 @@ def main():
             # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.unique
             label_list = datasets["train"].unique("label")
             label_list.sort()  # Let's sort it for determinism
+            print("this is label list", label_list)
             num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
@@ -347,14 +348,16 @@ def main():
     print('training_args.load_trained_model',training_args.load_trained_model)
     if training_args.load_trained_model:
         config = AutoConfig.from_pretrained(
-            #芊edited 23.06.03
+            #h1k edited 23.06.03
             #model_args.model_name_or_path,
             model_args.model_name_or_path+"/pt_save_pretrained",
             num_labels=num_labels,
             finetuning_task=data_args.task_name,
             cache_dir=model_args.cache_dir,
         )
-
+        
+        #h1k edited:
+        config.label_list
         config.model_name = "roberta-large"
         config.negative_num = training_args.negative_num
         config.positive_num = training_args.positive_num
@@ -430,6 +433,7 @@ def main():
         elif training_args.load_model_pattern == "knn_bert":
             config.knn_num = training_args.top_k
             config.end_k = training_args.end_k
+            config.script_mask_dict = CreateMaskDict(label_list, datasets)
             model = ContrastiveMoCoKnnBert(config=config)
         elif training_args.load_model_pattern == "knn_roberta":
             config.knn_num = training_args.top_k
@@ -498,6 +502,7 @@ def main():
             )
     elif data_args.task_name is None:
         label_to_id = {v: i for i, v in enumerate(label_list)}
+        print('This is label_list',label_to_id)
 
     def preprocess_function(examples):
         # Tokenize the texts
@@ -515,7 +520,7 @@ def main():
         return result
 
     datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache)
-
+    
     train_dataset = datasets["train"]
     eval_dataset = datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
     test_dataset = datasets["test"] if training_args.do_predict else None
