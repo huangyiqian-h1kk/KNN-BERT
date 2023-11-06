@@ -21,6 +21,7 @@ import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import random
 import sys
+import json
 import torch
 import fitlog
 from dataclasses import dataclass, field
@@ -212,14 +213,17 @@ def data_collator(features):
 #h1k
 def CreateMaskDict(LabelList, DATA):
     mask_dict = dict()
-    tv_list = DATA["train"].unique("TV_id")
-    all_roles= np.array(range(len(LabelList)))
+    tv_list = DATA["train"].unique("tv_id")
+    all_roles= np.array(LabelList)
+    
     for ids in tv_list:
-        ind = DATA["train"]["TV_id"].index(ids)
-        roles = np.array(DATA["train"]['candidates'][ind])
+        ind = DATA["train"]["tv_id"].index(ids)
+        roles = np.array(list(eval(DATA["train"]['candidates'][ind])))
         mask_row = np.isin(all_roles, roles).tolist()
-        mask_dict[ids] = mask_row
+        mask_dict[ids] = mask_row    
         
+    json_str = json.dumps(mask_dict)
+
     return mask_dict
 
 def main():
@@ -357,7 +361,7 @@ def main():
         )
         
         #h1k edited:
-        config.label_list
+        #config.label_list
         config.model_name = "roberta-large"
         config.negative_num = training_args.negative_num
         config.positive_num = training_args.positive_num
@@ -502,7 +506,6 @@ def main():
             )
     elif data_args.task_name is None:
         label_to_id = {v: i for i, v in enumerate(label_list)}
-        print('This is label_list',label_to_id)
 
     def preprocess_function(examples):
         # Tokenize the texts
@@ -514,12 +517,15 @@ def main():
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [label_to_id[l] for l in examples["label"]]
-        result["candidates"] = [[label_to_id[l] for l in can if l in label_to_id.values()] for can in examples["candidates"]]
-        # result["sent_id"] = [index for index, i in enumerate(examples["label"])]
-        # result["original_text"] = examples[sentence1_key]
+        #result["candidates"] = [[label_to_id[l] for l in eval(can) if l in label_to_id.keys()] for can in examples["candidates"]]
+        #print("line 517 in run_main result.keys()", result.keys())
+
         return result
 
+    datasets["train"] = datasets["train"].remove_columns(["candidates"])
     datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache)
+    
+    print("line 527 in run_main result.keys()", datasets["train"])
     
     train_dataset = datasets["train"]
     eval_dataset = datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]

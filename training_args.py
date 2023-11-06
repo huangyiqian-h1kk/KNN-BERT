@@ -363,7 +363,7 @@ class TrainingArguments:
     )
 
     remove_unused_columns: Optional[bool] = field(
-        default=False, metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
+        default=True, metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
     )
     label_names: Optional[List[str]] = field(
         default=None, metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}

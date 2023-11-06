@@ -413,16 +413,25 @@ class Trainer:
     def create_negative_dataset(self):
         negative_dataset = {}
         data = self.train_dataset
+        print('my_trainer line 413 create_negative_dataset data',data)
+        print('data[1]', data[1])
+        
+        flag=0
         for line in data:
             label = int(line["label"])
             inputs = line
+            
+            if flag==0:
+                print('my_trainer line 421 create_negative_dataset line',line)
+                flag=1
 
             inputs.pop("label")
             if label not in negative_dataset.keys():
                 negative_dataset[label] = [inputs]
             else:
                 negative_dataset[label].append(inputs)
-
+                
+        print('my_trainer line 427 create_negative_dataset negative_dataset', negative_dataset[1][0])
         return negative_dataset
 
     def tokenizer_to_tensor(self, sample: List[str]):
@@ -456,7 +465,10 @@ class Trainer:
         """
         for k, v in batch.items():
             shape = v.shape
-            batch[k] = v.view([-1, sample_num, shape[-1]])
+            if len(shape)==1:
+                batch[k] = v.view([-1, sample_num, 1])
+            else:
+                batch[k] = v.view([-1, sample_num, shape[-1]])
         return batch
 
     def predict_queue_knn_test(self,
@@ -640,8 +652,10 @@ class Trainer:
                 positive_sample.extend(random.sample(self.negative_data[input_label], positive_num))
             except:
                 print('except','input_label',input_label)
+                     
 
         return self.reshape_dict(positive_num, self.list_item_to_tensor(positive_sample))
+    
 
     def generate_single_sample(self, label: torch.Tensor):
         positive_sample = []
@@ -685,9 +699,10 @@ class Trainer:
         model.train()
         positive_sample = None
         negative_sample = None
+        
+        
         if not self.args.memory_bank and self.args.load_model_pattern in ["knn_bert", "knn_roberta"]:
             positive_sample = self.generate_positive_sample(inputs["labels"])
-            print('inputs["labels"]',inputs["labels"])
             positive_sample = self._prepare_inputs(positive_sample)
 
         if self.args.load_model_pattern in ["moco", "roberta_moco"]:
@@ -699,7 +714,7 @@ class Trainer:
 
         # if self.args.load_model_pattern == "moco_queue_sample":
         #     positive_sample = self.generate_random_sample()
-
+        
         inputs = self._prepare_inputs(inputs)
         # TODO 在这里进行采样生成正样本和负样本
         if self.use_amp:
@@ -770,7 +785,7 @@ class Trainer:
         signature_columns = list(signature.parameters.keys())
         # Labels may be named label or label_ids, the default data collator handles that.
         signature_columns += ["label", "label_ids", "input_ids", "attention_mask",
-                              "token_type_ids", "original_text", "sent_id"]
+                              "token_type_ids", "original_text", "sent_id", "tv_id"]
         columns = [k for k in signature_columns if k in dataset.column_names]
         ignored_columns = list(set(dataset.column_names) - set(signature_columns))
         dset_description = "" if description is None else f"in the {description} set "
@@ -806,8 +821,6 @@ class Trainer:
             raise ValueError("Trainer: training requires a train_dataset.")
         train_sampler = self._get_train_sampler()
         
-        print('line809 in my_trainer', self.train_dataset)
-
         return DataLoader(
             self.train_dataset,
             batch_size=self.args.train_batch_size,
@@ -1021,21 +1034,7 @@ class Trainer:
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        for _, inputs in enumerate(train_dataloader):
-            print('line1028 in my trainer',inputs)
-            break
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
-        print('line1022 in my trainer')
+
 
         # Setting up training control variables:
         # number of training epochs: num_train_epochs
@@ -1176,17 +1175,16 @@ class Trainer:
             for step, inputs in enumerate(train_dataloader):
                 inputs = self._prepare_inputs(inputs)
                 labels = inputs["labels"]
-                print('line1161 in my trainer',inputs.keys())
-                tv_id_batch = inputs["TV_id"]
+                tv_id_batch = inputs["tv_id"]
                 
                 inputs.pop("labels")
-                inputs.pop("TV_id")
-                print("my_trainer.py print inputs", inputs['candidates'].shape)
+                inputs.pop("tv_id")
 
                 if self.args.n_gpu > 1 and not self.args.model_parallel:
                     model.module.update_queue_by_bert(inputs, labels, tv_id_batch)
                 else:
                     model.update_queue_by_bert(inputs, labels, tv_id_batch)
+                    
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
                 train_dataloader.sampler.set_epoch(epoch)
@@ -1205,6 +1203,7 @@ class Trainer:
 
             steps_in_epoch = len(epoch_iterator) if train_dataset_is_sized else self.args.max_steps
             self.control = self.callback_handler.on_epoch_begin(self.args, self.state, self.control)
+     
 
             for step, inputs in enumerate(epoch_iterator):
 

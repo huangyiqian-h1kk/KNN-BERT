@@ -15,24 +15,32 @@ def l2norm(x: torch.Tensor):
     x = torch.div(x, norm)
     return x
 
-class MaskedCrossEntropyLoss(nn.CrossEntropyLoss):
-    def masked_softmax(x, mask, **kwargs):
-        x_masked = x.clone()
-        x_masked[mask == 0] = -float("inf")
-        return torch.softmax(x_masked, **kwargs)
 
-    def forward(self, input, target, script_mask=None):
-        # Apply your masked softmax operation here using the input and mask
-        if mask is not None:
-            input_masked = input * script_mask + (1 - 1 / script_mask)
-            input_softmax = masked_softmax(input_masked)
+class MaskedCrossEntropyLoss(nn.Module):
+    def __init__(self,x , target, script_mask):
+        super(MaskedCrossEntropyLoss,self).__init__()
+        #self.mask=torch.Tensor(script_mask).to("cuda")
+        self.mask=script_mask
+        self.x=x
+        self.target=target
+    
+    def masked_softmax(self):
+        x_masked = self.x.clone()
+        x_masked[self.mask == 0] = -float("inf")
+        m = nn.LogSoftmax(dim=1)
+        m_softmax= m(x_masked)
+        return m_softmax
+
+    def forward(self):
+        if self.mask is not None:
+            input_softmax = self.masked_softmax()
         else:
-            input_softmax = F.softmax(input, dim=1)
+            input_softmax = F.softmax(Input, dim=1)
         
-        # Calculate the loss using the masked softmax probabilities
-        return F.cross_entropy(input_softmax, target, weight=self.weight,
-                               ignore_index=self.ignore_index, reduction=self.reduction)
-
+        loss = nn.NLLLoss()
+        output = loss(input_softmax, self.target)
+        return output
+    
     
 class SCLModel(BertPreTrainedModel):
     def __init__(self, config):
@@ -671,8 +679,9 @@ class ContrastiveMoCoKnnBert(nn.Module):
         # 3、根据label取正样本和负样本的mask_index
         tmp_label = label_q.unsqueeze(1)
         tmp_label = tmp_label.repeat([1, self.K])
+        
         tmp_tvid = tv_id.unsqueeze(1)
-        tmp_tvid = tv_id.repeat([1, self.K])
+        tmp_tvid = tmp_tvid.repeat([1, self.K])
        
 
         pos_mask_index = torch.eq(tmp_label_queue, tmp_label)
@@ -688,7 +697,11 @@ class ContrastiveMoCoKnnBert(nn.Module):
 
         feature_value = cos_sim.masked_select(neg_mask_index)
         neg_sample = torch.full_like(cos_sim, -np.inf).cuda()
-        neg_sample = neg_sample.masked_scatter(neg_tvid_mask, feature_value)
+        try:
+            neg_sample = neg_sample.masked_scatter(neg_tvid_mask, feature_value)
+        except:
+            print(neg_tvid_mask)
+            print(feature_value)
         neg_sample = neg_sample.masked_scatter(neg_mask_index, neg_sample)
 
         # 5、取所有的负样本和前top_k 个正样本， -M个正样本（离中心点最远的样本）
@@ -815,19 +828,14 @@ class ContrastiveMoCoKnnBert(nn.Module):
         
         batch_tv_id = query["tv_id"]
         batch_tv_id = batch_tv_id.view(-1)
-        batch_tv_mask = [self.script_mask_dict[tv_id] for tv_id in batch_tv_id]
-        
-
-        #(按照batch取mask 研究一下维度)
-        
-        #给cls的mask是within batch的，dimension是[batch_size,label_set_list]
-        #应该是每一个有label的地方都对应一条mask， 然后随着label做同样的记忆操作
+        batch_tv_mask = [self.script_mask_dict[int(tv_id)] for tv_id in batch_tv_id]
         
         
         if not self.memory_bank:
             with torch.no_grad():
                 self.update_encoder_k()
                 update_sample = self.reshape_dict(positive_sample)
+                update_sample.pop("tv_id")
                 bert_output_p = self.encoder_k(**update_sample)
                 update_keys = bert_output_p[1]
                 update_keys = self.contrastive_liner_k(update_keys)
@@ -841,6 +849,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
                 self._dequeue_and_enqueue(update_keys, tmp_labels, tmp_tvids)
                 
         query.pop("labels")
+        query.pop("tv_id")
         bert_output_q = self.encoder_q(**query)
         q = bert_output_q[1]
         liner_q = self.contrastive_liner_q(q)
@@ -852,10 +861,8 @@ class ContrastiveMoCoKnnBert(nn.Module):
             loss_fct = MSELoss()
             loss_cls = loss_fct(logits_cls.view(-1), labels)
         else:
-            #loss_fct = CrossEntropyLoss()
-            loss_fct = MaskedCrossEntropyLoss()
             #loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels)
-            loss_cls = loss_fct(logits_cls.view(-1, self.num_labels), labels, s_mask)
+            loss_cls = MaskedCrossEntropyLoss(x=logits_cls.view(-1, self.num_labels), target=labels, script_mask=batch_tv_mask).forward()
 
         if self.random_positive:
             logits_con = self.select_pos_neg_random(liner_q, labels)
@@ -882,6 +889,7 @@ class ContrastiveMoCoKnnBert(nn.Module):
     # 考虑eval过程写在model内部？
     def predict(self, query):
         with torch.no_grad():
+            query.pop("tv_id")
             bert_output_q = self.encoder_q(**query)
             q = bert_output_q[1]
             logits_cls = self.classifier_liner(q)
@@ -900,10 +908,6 @@ class ContrastiveMoCoKnnBert(nn.Module):
                              tv_id_batch=None
                              ):
         with torch.no_grad():
-            print('model.py line903 printing batch.items')
-            print(inputs.keys())
-            for i in inputs.values():
-                print(i.shape)
             update_sample = self.reshape_dict(inputs)
             roberta_output = self.encoder_k(**update_sample)
             update_keys = roberta_output[1]
